@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>3D 주차장 A* 최적화 시뮬레이션</title>
+    <style>
+        :root {
+            --board-width: 320px;
+            --num-rows: 4;
+            --num-cols: 4;
+            --tile-w: calc(var(--board-width) / var(--num-cols));
+            --tile-h: var(--tile-w);
+            --anim: 400ms;
+            --c-bg: #f5f5f5;
+            --c-elev: #243642;
+            --c-entr: #FFD700;
+            --c-car1: #387478;
+            --c-car2: #FF6B6B;
+            --c-car3: #4ECDC4;
+            --c-car4: #45B7D1;
+            --c-car5: #96CEB4;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            gap: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            
+            min-height: 100vh;
+            color: rgb(0, 0, 0);
+        }
+
+        h1 {
+            font-size: 28px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        #wrap {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        .floor-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .board {
+            position: relative;
+            width: 326px;
+            height: var(--board-width);
+            border: 3px solid #333;
+            background: var(--c-bg);
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        .floor-label {
+            font-size: 18px;
+            font-weight: bold;
+            color: rgb(0, 0, 0);
+        }
+
+        .tile {
+            position: absolute;
+            width: var(--tile-w);
+            height: var(--tile-h);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #fff;
+            border-radius: 6px;
+            transition: transform var(--anim) ease-in-out;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 14px;
+        }
+
+        .car1 { background: var(--c-car1); }
+        .car2 { background: var(--c-car2); }
+        .car3 { background: var(--c-car3); }
+        .car4 { background: var(--c-car4); }
+        .car5 { background: var(--c-car5); }
+
+        .elev {
+            background: var(--c-elev);
+        }
+
+        .entr {
+            background: var(--c-entr);
+            color: #333;
+            border: 2px solid #333;
+        }
+
+        #controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        button {
+            border: none;
+            padding: 12px 24px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #status {
+            background: rgba(255,255,255,0.1);
+            padding: 16px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            text-align: center;
+            min-width: 300px;
+        }
+
+        .info-panel {
+            background: rgba(255,255,255,0.1);
+            padding: 16px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            margin-top: 16px;
+        }
+
+        .eta-info {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .eta-item {
+            text-align: center;
+            padding: 8px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>공항주차장</h1>
+    <div class="subtitle">출차시간을 기반으로 한 차량 재배치 시스템</div>
+    
+    <div id="wrap">
+        <div class="floor-container">
+            <div class="board" id="floor0"></div>
+            <div class="floor-label">1층</div>
+        </div>
+        <div class="floor-container">
+            <div class="board" id="floor1"></div>
+            <div class="floor-label">2층</div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button id="run">시뮬레이션 시작</button>
+        <button id="reset">초기화</button>
+    </div>
+
+    <div id="status">
+        <div><span id="current-status">준비 완료</span></div>
+        <div><strong>이동 단계:</strong> <span id="step-count">0 / 21</span></div>
+    </div>
+
+    <div class="info-panel">
+        <div><strong>출차까지 남은 시간</strong></div>
+        <div class="eta-info">
+            <div class="eta-item">
+                <div style="background: var(--c-car2); width: 20px; height: 20px; margin: 0 auto 4px; border-radius: 50%;"></div>
+                <div>차량 2</div>
+                <div>15분</div>
+            </div>
+            <div class="eta-item">
+                <div style="background: var(--c-car4); width: 20px; height: 20px; margin: 0 auto 4px; border-radius: 50%;"></div>
+                <div>차량 4</div>
+                <div>20분</div>
+            </div>
+            <div class="eta-item">
+                <div style="background: var(--c-car1); width: 20px; height: 20px; margin: 0 auto 4px; border-radius: 50%;"></div>
+                <div>차량 1</div>
+                <div>30분</div>
+            </div>
+            <div class="eta-item">
+                <div style="background: var(--c-car5); width: 20px; height: 20px; margin: 0 auto 4px; border-radius: 50%;"></div>
+                <div>차량 5</div>
+                <div>35분</div>
+            </div>
+            <div class="eta-item">
+                <div style="background: var(--c-car3); width: 20px; height: 20px; margin: 0 auto 4px; border-radius: 50%;"></div>
+                <div>차량 3</div>
+                <div>45분</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ROWS = 4, COLS = 4;
+        const floorEls = [document.getElementById('floor0'), document.getElementById('floor1')];
+        const ELEV_POS = [{ f: 0, r: 0, c: 0 }, { f: 1, r: 0, c: 0 }];
+        const ENTR_POS = { f: 0, r: 0, c: 3 };
+        
+        // 초기 차량 위치
+        const carInit = [
+            { id: 1, f: 0, r: 1, c: 1, eta: 30 },
+            { id: 2, f: 1, r: 2, c: 2, eta: 15 },
+            { id: 3, f: 0, r: 2, c: 1, eta: 45 },
+            { id: 4, f: 1, r: 1, c: 3, eta: 20 },
+            { id: 5, f: 0, r: 0, c: 3, eta: 35 }
+        ];
+
+        // 제공받은 이동 순서
+        const sequence = [
+            { id: 2, f: 1, r: 1, c: 2 },  // 1
+            { id: 2, f: 1, r: 0, c: 2 },  // 2
+            { id: 2, f: 1, r: 0, c: 1 },  // 3
+            { id: 4, f: 1, r: 1, c: 2 },  // 4
+            { id: 4, f: 1, r: 1, c: 1 },  // 5
+            { id: 4, f: 1, r: 1, c: 0 },  // 6
+            { id: 4, f: 1, r: 0, c: 0 },  // 7
+            { id: 4, f: 0, r: 0, c: 0 },  // 8 (층간이동)
+            { id: 2, f: 1, r: 0, c: 0 },  // 9
+            { id: 4, f: 0, r: 0, c: 1 },  // 10
+            { id: 2, f: 0, r: 0, c: 0 },  // 11 (층간이동)
+            { id: 5, f: 0, r: 1, c: 3 },  // 12
+            { id: 4, f: 0, r: 0, c: 2 },  // 13
+            { id: 4, f: 0, r: 0, c: 3 },  // 14
+            { id: 2, f: 0, r: 0, c: 1 },  // 15
+            { id: 2, f: 0, r: 0, c: 2 },  // 16
+            { id: 1, f: 0, r: 0, c: 1 },  // 17
+            { id: 5, f: 0, r: 1, c: 2 },  // 18
+            { id: 4, f: 0, r: 1, c: 3 },  // 19
+            { id: 3, f: 0, r: 2, c: 2 },  // 20
+            { id: 3, f: 0, r: 2, c: 3 }   // 21
+        ];
+
+        let cars = {};
+        let isRunning = false;
+        let currentStep = 0;
+
+        function placeTile({ f, r, c, cls, text }) {
+            const el = document.createElement('div');
+            el.className = 'tile ' + cls;
+            if (text) el.textContent = text;
+            el.style.transform = `translate(calc(var(--tile-w)*${c}), calc(var(--tile-h)*${r}))`;
+            floorEls[f].appendChild(el);
+            return el;
+        }
+
+        function init() {
+            // 보드 초기화
+            floorEls.forEach(b => b.innerHTML = '');
+            cars = {};
+            currentStep = 0;
+            
+            // 엘리베이터 배치
+            ELEV_POS.forEach(p => placeTile({ 
+                f: p.f, r: p.r, c: p.c, cls: 'elev', text: 'ELV' 
+            }));
+            
+            // 출입구 배치
+            placeTile({ 
+                f: ENTR_POS.f, r: ENTR_POS.r, c: ENTR_POS.c, cls: 'entr', text: 'ENT' 
+            });
+            
+            // 차량 배치
+            carInit.forEach(car => {
+                const el = placeTile({ 
+                    f: car.f, r: car.r, c: car.c, 
+                    cls: `car${car.id}`, text: car.id 
+                });
+                cars[car.id] = { el, f: car.f, r: car.r, c: car.c };
+            });
+
+            updateStatus('준비 완료', 0);
+        }
+
+        function updateStatus(status, step) {
+            document.getElementById('current-status').textContent = status;
+            document.getElementById('step-count').textContent = `${step} / ${sequence.length}`;
+        }
+
+        function run() {
+            if (isRunning) return;
+            isRunning = true;
+            
+            document.getElementById('run').disabled = true;
+            document.getElementById('reset').disabled = true;
+            
+            let i = 0;
+            
+            function step() {
+                if (i >= sequence.length) {
+                    updateStatus('최적화 완료! 🎉', sequence.length);
+                    document.getElementById('run').disabled = false;
+                    document.getElementById('reset').disabled = false;
+                    isRunning = false;
+                    return;
+                }
+                
+                const move = sequence[i];
+                const car = cars[move.id];
+                
+                updateStatus(`차량 ${move.id} 이동 중...`, i + 1);
+                
+                // 층간 이동 처리
+                if (car.f !== move.f) {
+                    floorEls[car.f].removeChild(car.el);
+                    floorEls[move.f].appendChild(car.el);
+                    car.f = move.f;
+                }
+                
+                // 위치 업데이트
+                car.r = move.r;
+                car.c = move.c;
+                car.el.style.transform = `translate(calc(var(--tile-w)*${move.c}), calc(var(--tile-h)*${move.r}))`;
+                
+                i++;
+                setTimeout(step, 500); // 0.5초 간격
+            }
+            
+            step();
+        }
+
+        function reset() {
+            if (isRunning) return;
+            init();
+        }
+
+        // 이벤트 리스너
+        document.getElementById('run').addEventListener('click', run);
+        document.getElementById('reset').addEventListener('click', reset);
+
+        // 초기화
+        init();
+    </script>
+</body>
+
+</html>
